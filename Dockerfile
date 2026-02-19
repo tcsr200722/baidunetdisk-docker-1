@@ -1,13 +1,12 @@
-FROM ubuntu:18.04
+FROM ubuntu:24.04
 
-ENV BAIDUNETDISK_PACKAGE https://issuepcdn.baidupcs.com/issue/netdisk/LinuxGuanjia/4.3.0/baidunetdisk_4.3.0_amd64.deb
-ENV NOVNC_PACKAGE https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.tar.gz
+ARG TARGETARCH
+ENV NOVNC_PACKAGE=https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.tar.gz
+ENV VNC_SERVER_PASSWD=password
 
-ENV VNC_SERVER_PASSWD password
-
-ENV LC_ALL C.UTF-8
-ENV LANG C.UTF-8
-ENV LANGUAGE zh_CN:zh
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+ENV LANGUAGE=zh_CN:zh
 
 # Variables needed for non interactive tzdata installation.
 ENV TZ=Asia/Shanghai
@@ -24,7 +23,7 @@ RUN apt-get -qqy update && \
     i3-wm \
     desktop-file-utils \
     libappindicator3-1 \
-    libasound2 \
+    libasound2t64 \
     libnss3 \
     libgtk-3-0 \
     libfontconfig \
@@ -32,6 +31,7 @@ RUN apt-get -qqy update && \
     libgbm-dev \
     libnotify4 \
     libsecret-1-0 \
+    libcap2-bin \
     xfonts-cyrillic \
     xfonts-scalable \
     fonts-liberation \
@@ -44,7 +44,12 @@ RUN apt-get -qqy update && \
 RUN mkdir /root/.vnc && \
   touch /root/.vnc/passwd
 
-RUN wget ${BAIDUNETDISK_PACKAGE} -O baidunetdisk.deb && \
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    BAIDUNETDISK_PACKAGE="https://issuepcdn.baidupcs.com/issue/netdisk/LinuxGuanjia/4.17.7/baidunetdisk_4.17.7_arm64.deb"; \
+  else \
+    BAIDUNETDISK_PACKAGE="https://issuepcdn.baidupcs.com/issue/netdisk/LinuxGuanjia/4.17.7/baidunetdisk_4.17.7_amd64.deb"; \
+  fi && \
+  wget ${BAIDUNETDISK_PACKAGE} -O baidunetdisk.deb && \
   dpkg -i baidunetdisk.deb && \
   rm baidunetdisk.deb -f
 
@@ -55,16 +60,11 @@ RUN wget ${NOVNC_PACKAGE} -O novnc.tar.gz && \
   rm novnc.tar.gz websockify.tar.gz -f && \
   mv /root/novnc/noVNC-* /root/novnc/noVNC
 
-# Remove cap_net_admin capabilities to avoid failing with 'operation not permitted'.
-RUN setcap -r `which i3status`
-
 COPY supervisord.conf /root/supervisord.conf
 COPY i3_config /root/.config/i3/config
+COPY index.html /root/novnc/noVNC/index.html
 
 EXPOSE 5900
 EXPOSE 6080
 
-CMD echo "VNC (vnc://localhost:5900) password is $VNC_SERVER_PASSWD" && \
-  /usr/bin/x11vnc -storepasswd $VNC_SERVER_PASSWD ~/.vnc/passwd && \
-  /usr/bin/supervisord -c /root/supervisord.conf && \
-  /usr/bin/tail -f /dev/null
+CMD ["sh", "-c", "echo \"VNC (vnc://localhost:5900) password is $VNC_SERVER_PASSWD\" && /usr/bin/x11vnc -storepasswd $VNC_SERVER_PASSWD ~/.vnc/passwd && /usr/bin/supervisord -c /root/supervisord.conf && /usr/bin/tail -f /dev/null"]
